@@ -19,7 +19,7 @@ async function authUser(req, res, next) {
 
     }catch(err){
         console.log("Unauthorized", err);
-        
+        return res.status(401).json({message: "Invalid or expired token"});
     }
 }
 
