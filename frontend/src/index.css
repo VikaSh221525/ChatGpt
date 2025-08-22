@@ -1,0 +1,64 @@
+@import "tailwindcss";
+
+@font-face {
+    font-family: 'Agrandir';
+    src: url('/Agrandir-GrandHeavy.otf') format('opentype');
+    font-weight: 900;
+    font-style: normal;
+}
+
+@font-face {
+    font-family: 'Agrandir';
+    src: url('/Agrandir-GrandLight.otf') format('opentype');
+    font-weight: 300;
+    font-style: normal;
+}
+
+@font-face {
+    font-family: 'Agrandir';
+    src: url('/Agrandir-Narrow.otf') format('opentype');
+    font-weight: 500;
+    font-style: normal;
+}
+
+@font-face {
+    font-family: 'Agrandir';
+    src: url('/Agrandir-Regular.otf') format('opentype');
+    font-weight: 400;
+    font-style: normal;
+}
+
+@font-face {
+    font-family: 'Agrandir';
+    src: url('/Agrandir-TextBold.otf') format('opentype');
+    font-weight: 700;
+    font-style: normal;
+}
+
+@font-face {
+    font-family: 'Agrandir';
+    src: url('/Agrandir-Tight.otf') format('opentype');
+    font-weight: 600;
+    font-style: normal;
+}
+
+@font-face {
+    font-family: 'Agrandir';
+    src: url('/Agrandir-WideBlack.otf') format('opentype');
+    font-weight: 800;
+    font-style: normal;
+}
+
+@font-face {
+    font-family: 'Agrandir';
+    src: url('/Agrandir-WideLight.otf') format('opentype');
+    font-weight: 200;
+    font-style: normal;
+}
+
+.absolute-center{
+    position: absolute;
+    top: 30%;
+    left: 50%;
+    transform: translate(-50%,-50%);
+}
