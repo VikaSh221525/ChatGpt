@@ -3,10 +3,14 @@ const { GoogleGenAI } = require("@google/genai");
 // The client gets the API key from the environment variable `GEMINI_API_KEY`.
 const ai = new GoogleGenAI({apiKey: process.env.GEMINI_API_KEY});
 
-async function generateResponse(content) {
+async function generateResponse(content, systemInstruction) {
     const response = await ai.models.generateContent({
         model: "gemini-2.5-flash",
         contents: content,
+        config:{
+            temperature: 0.6,
+            systemInstruction: systemInstruction
+        }
     });
     return response.text
 }
