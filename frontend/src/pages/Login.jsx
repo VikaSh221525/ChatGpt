@@ -2,6 +2,7 @@ import React, { useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { useNavigate } from 'react-router-dom'
 import { FaEnvelope, FaLock, FaEye, FaEyeSlash } from 'react-icons/fa'
+import axios from 'axios'
 
 const Login = () => {
     const navigate = useNavigate()
@@ -9,10 +10,16 @@ const Login = () => {
     const { register, handleSubmit, formState: { errors } } = useForm()
 
     const onSubmit = (data) => {
-        console.log('Login data:', data)
         // Here you would typically send data to your backend for authentication
         // For now, we'll just log the data
-        alert('Login successful!')
+        axios.post("http://localhost:3000/api/auth/login", {
+            email : data.email,
+            password: data.password
+        }, { withCredentials: true }).then((res) => {
+            navigate('/AnolaAi');
+        }).catch((err) => {
+            console.log(err);
+        })
     }
 
     const togglePasswordVisibility = () => {
@@ -74,7 +81,6 @@ const Login = () => {
                             style={{ fontFamily: 'Agrandir, sans-serif', fontWeight: 400 }}
                             {...register('password', {
                                 required: 'Password is required',
-                                minLength: { value: 6, message: 'Password must be at least 6 characters' }
                             })}
                         />
                         <button

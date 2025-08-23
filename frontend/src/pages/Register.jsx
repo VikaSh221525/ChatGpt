@@ -2,6 +2,7 @@ import React, { useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { useNavigate } from 'react-router-dom'
 import { FaLock, FaUser, FaEnvelope, FaEye, FaEyeSlash } from "react-icons/fa";
+import axios from 'axios';
 
 const Register = () => {
     const navigate = useNavigate()
@@ -12,7 +13,19 @@ const Register = () => {
         console.log('Registration data:', data)
         // Here you would typically send data to your backend
         // For now, we'll just navigate to login
-        navigate('/Login')
+        axios.post('http://localhost:3000/api/auth/register', {
+            email: data.email,
+            password: data.password,
+            fullName: {
+                firstName: data.firstName,
+                lastName: data.lastName
+            }
+        }, {withCredentials: true}).then(res =>{console.log(res)
+            navigate('/Login')
+        }).catch((err) => {
+            console.log(err);
+            alert('Registeration failed')
+        })
     }
 
     const togglePasswordVisibility = () => {
