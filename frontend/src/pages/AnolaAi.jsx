@@ -1,7 +1,211 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { FaPlus, FaUser, FaPaperPlane, FaRobot, FaTrash, FaEdit, FaBars, FaTimes } from 'react-icons/fa';
+import { FaPlus, FaUser, FaPaperPlane, FaRobot, FaTrash, FaEdit, FaBars, FaTimes, FaCopy } from 'react-icons/fa';
 import axios from 'axios'
 import { io } from "socket.io-client";
+
+// Component to format AI messages with proper styling
+const FormattedMessage = ({ content, type }) => {
+    const [copied, setCopied] = useState(false);
+
+    const copyToClipboard = () => {
+        navigator.clipboard.writeText(content);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+    };
+
+    const formatText = (text) => {
+        // First, handle code blocks properly
+        const codeBlockRegex = /```(\w+)?\n?([\s\S]*?)```/g;
+        const parts = [];
+        let lastIndex = 0;
+        let match;
+
+        // Extract code blocks and regular text
+        while ((match = codeBlockRegex.exec(text)) !== null) {
+            // Add text before code block
+            if (match.index > lastIndex) {
+                parts.push({
+                    type: 'text',
+                    content: text.slice(lastIndex, match.index)
+                });
+            }
+
+            // Add code block
+            parts.push({
+                type: 'code',
+                language: match[1] || '',
+                content: match[2].trim()
+            });
+
+            lastIndex = match.index + match[0].length;
+        }
+
+        // Add remaining text
+        if (lastIndex < text.length) {
+            parts.push({
+                type: 'text',
+                content: text.slice(lastIndex)
+            });
+        }
+
+        // If no code blocks found, treat entire text as regular text
+        if (parts.length === 0) {
+            parts.push({
+                type: 'text',
+                content: text
+            });
+        }
+
+        return parts.map((part, partIndex) => {
+            if (part.type === 'code') {
+                return (
+                    <div key={partIndex} className="my-4 relative group">
+                        <div className="bg-gray-900 border border-gray-700 rounded-xl overflow-hidden shadow-lg">
+                            {/* Code header with language and copy button */}
+                            <div className="flex items-center justify-between px-4 py-3 bg-gray-800/80 border-b border-gray-600">
+                                <div className="flex items-center gap-2">
+                                    <div className="flex gap-1.5">
+                                        <div className="w-3 h-3 rounded-full bg-red-500"></div>
+                                        <div className="w-3 h-3 rounded-full bg-yellow-500"></div>
+                                        <div className="w-3 h-3 rounded-full bg-green-500"></div>
+                                    </div>
+                                    <span className="text-xs text-gray-300 font-medium ml-2">
+                                        {part.language || 'code'}
+                                    </span>
+                                </div>
+                                <button
+                                    onClick={() => {
+                                        navigator.clipboard.writeText(part.content);
+                                        // You could add a toast notification here
+                                    }}
+                                    className="text-xs text-gray-400 hover:text-white transition-colors px-3 py-1.5 rounded-md hover:bg-gray-700 flex items-center gap-1.5"
+                                >
+                                    <FaCopy className="text-xs" />
+                                    Copy
+                                </button>
+                            </div>
+                            {/* Code content */}
+                            <div className="p-4 overflow-x-auto code-block bg-gray-900">
+                                <pre className="text-sm leading-relaxed">
+                                    <code className="text-gray-100 whitespace-pre block">
+                                        {part.content}
+                                    </code>
+                                </pre>
+                            </div>
+                        </div>
+                    </div>
+                );
+            }
+
+            // Handle regular text formatting
+            const paragraphs = part.content.split('\n\n');
+
+            return paragraphs.map((paragraph, pIndex) => {
+                if (!paragraph.trim()) return null;
+
+                const lines = paragraph.split('\n');
+
+                return (
+                    <div key={`${partIndex}-${pIndex}`} className={pIndex > 0 ? 'mt-4' : ''}>
+                        {lines.map((line, lIndex) => {
+                            // Check for different line types
+                            if (line.trim().startsWith('•') || line.trim().startsWith('-') || line.trim().startsWith('*')) {
+                                // Bullet points
+                                return (
+                                    <div key={lIndex} className="flex items-start gap-2 my-1">
+                                        <span className="text-purple-400 mt-1">•</span>
+                                        <span>{line.replace(/^[•\-*]\s*/, '')}</span>
+                                    </div>
+                                );
+                            } else if (line.match(/^\d+\./)) {
+                                // Numbered lists
+                                return (
+                                    <div key={lIndex} className="flex items-start gap-2 my-1">
+                                        <span className="text-purple-400 font-medium">{line.match(/^\d+\./)[0]}</span>
+                                        <span>{line.replace(/^\d+\.\s*/, '')}</span>
+                                    </div>
+                                );
+                            } else if (line.trim().startsWith('#')) {
+                                // Headers
+                                const headerLevel = line.match(/^#+/)[0].length;
+                                const headerText = line.replace(/^#+\s*/, '');
+                                const headerClass = headerLevel === 1 ? 'text-xl font-bold text-white mt-4 mb-2' :
+                                    headerLevel === 2 ? 'text-lg font-semibold text-white mt-3 mb-2' :
+                                        'text-base font-medium text-white mt-2 mb-1';
+
+                                return (
+                                    <div key={lIndex} className={headerClass}>
+                                        {headerText}
+                                    </div>
+                                );
+                            } else if (line.includes('`') && line.split('`').length > 2) {
+                                // Inline code
+                                const parts = line.split('`');
+                                return (
+                                    <div key={lIndex} className={lIndex > 0 ? 'mt-1' : ''}>
+                                        {parts.map((part, partIndex) =>
+                                            partIndex % 2 === 1 ? (
+                                                <code key={partIndex} className="bg-gray-800/80 text-emerald-400 px-2 py-0.5 rounded-md text-sm font-mono border border-gray-700">
+                                                    {part}
+                                                </code>
+                                            ) : (
+                                                <span key={partIndex}>{part}</span>
+                                            )
+                                        )}
+                                    </div>
+                                );
+                            } else if (line.trim() === '') {
+                                // Empty lines
+                                return <div key={lIndex} className="h-2"></div>;
+                            } else {
+                                // Regular text with bold/italic formatting
+                                let formattedLine = line;
+
+                                // Bold text **text**
+                                formattedLine = formattedLine.replace(/\*\*(.*?)\*\*/g, '<strong class="font-semibold text-white">$1</strong>');
+
+                                // Italic text *text*
+                                formattedLine = formattedLine.replace(/\*(.*?)\*/g, '<em class="italic">$1</em>');
+
+                                return (
+                                    <div
+                                        key={lIndex}
+                                        className={lIndex > 0 ? 'mt-1' : ''}
+                                        dangerouslySetInnerHTML={{ __html: formattedLine }}
+                                    />
+                                );
+                            }
+                        })}
+                    </div>
+                );
+            }).filter(Boolean);
+        }).flat();
+    };
+
+    if (type === 'user') {
+        return <div className="whitespace-pre-wrap">{content}</div>;
+    }
+
+    return (
+        <div className="relative group">
+            <div className="prose prose-invert max-w-none">
+                {formatText(content)}
+            </div>
+            {/* Copy button for AI messages */}
+            <button
+                onClick={copyToClipboard}
+                className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity p-1.5 bg-gray-700 hover:bg-gray-600 rounded text-gray-300 hover:text-white"
+                title="Copy message"
+            >
+                {copied ? (
+                    <span className="text-xs">✓</span>
+                ) : (
+                    <FaCopy className="text-xs" />
+                )}
+            </button>
+        </div>
+    );
+};
 
 const TypingAnimation = () => (
     <div className="flex space-x-1 p-4">
@@ -25,6 +229,7 @@ const AnolaAi = () => {
     const [isTyping, setIsTyping] = useState(false)
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState(null)
+    const [messagesLoading, setMessagesLoading] = useState(false)
     const messagesEndRef = useRef(null)
     const messagesContainerRef = useRef(null)
 
@@ -192,11 +397,36 @@ const AnolaAi = () => {
         }
     }
 
-    const selectChat = (chatId) => {
+    const selectChat = async (chatId) => {
         setCurrentChatId(chatId)
-        // In a real app, you'd load messages for this chat
-        setMessages([])
+        setMessages([]) // Clear current messages
         setIsTyping(false)
+        setMessagesLoading(true)
+
+        try {
+            // Load messages for this chat
+            const response = await axios.get(`http://localhost:3000/api/chat/messages/${chatId}`, {
+                withCredentials: true
+            })
+
+            console.log('Messages loaded:', response.data)
+
+            // Convert backend messages to frontend format
+            const loadedMessages = response.data.messages.map(msg => ({
+                id: msg._id,
+                type: msg.role === 'user' ? 'user' : 'ai',
+                content: msg.content,
+                timestamp: new Date(msg.createdAt)
+            }))
+
+            setMessages(loadedMessages)
+        } catch (error) {
+            console.error('Failed to load messages:', error)
+            // Don't show error to user, just keep empty messages
+        } finally {
+            setMessagesLoading(false)
+        }
+
         // Close sidebar on mobile after selection
         if (window.innerWidth <= 768) {
             setSidebarOpen(false)
@@ -338,39 +568,61 @@ const AnolaAi = () => {
                     ) : (
                         // Chat Messages
                         <div className='p-4 lg:p-6 space-y-6'>
-                            {messages.map((message) => (
-                                <div
-                                    key={message.id}
-                                    className={`flex gap-3 lg:gap-4 ${message.type === 'user' ? 'justify-end' : 'justify-start'}`}
-                                >
-                                    {message.type === 'ai' && (
-                                        <div className='w-8 h-8 bg-gradient-to-r from-purple-500 to-violet-500 rounded-full flex items-center justify-center flex-shrink-0'>
-                                            <FaRobot className='text-white text-sm' />
+                            {messagesLoading ? (
+                                <div className='flex justify-center items-center py-8'>
+                                    <div className='text-purple-400'>
+                                        <div className="flex space-x-1">
+                                            <div className="w-2 h-2 bg-purple-400 rounded-full animate-bounce"></div>
+                                            <div className="w-2 h-2 bg-purple-400 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
+                                            <div className="w-2 h-2 bg-purple-400 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
                                         </div>
-                                    )}
-
-                                    <div className={`max-w-[85%] lg:max-w-3xl ${message.type === 'user' ? 'order-1' : ''}`}>
-                                        <div
-                                            className={`p-3 lg:p-4 rounded-2xl ${message.type === 'user'
-                                                ? 'bg-gradient-to-r from-purple-600 to-violet-600 text-white ml-auto'
-                                                : 'bg-white/10 text-white border border-purple-500/20'
-                                                }`}
-                                            style={{ fontFamily: 'Agrandir, sans-serif', fontWeight: 400 }}
-                                        >
-                                            {message.content}
-                                        </div>
-                                        <div className={`text-xs text-gray-400 mt-2 ${message.type === 'user' ? 'text-right' : 'text-left'}`}>
-                                            {message.timestamp.toLocaleTimeString()}
-                                        </div>
+                                        <p className='text-sm mt-2 text-center'>Loading messages...</p>
                                     </div>
-
-                                    {message.type === 'user' && (
-                                        <div className='w-8 h-8 bg-gray-600 rounded-full flex items-center justify-center flex-shrink-0 order-2'>
-                                            <FaUser className='text-white text-sm' />
-                                        </div>
-                                    )}
                                 </div>
-                            ))}
+                            ) : messages.length === 0 ? (
+                                <div className='flex justify-center items-center py-8'>
+                                    <p className='text-gray-400 text-center'>
+                                        No messages yet. Start the conversation!
+                                    </p>
+                                </div>
+                            ) : (
+                                messages.map((message) => (
+                                    <div
+                                        key={message.id}
+                                        className={`flex gap-3 lg:gap-4 ${message.type === 'user' ? 'justify-end' : 'justify-start'}`}
+                                    >
+                                        {message.type === 'ai' && (
+                                            <div className='w-10 h-10 bg-gradient-to-br from-purple-500 via-violet-500 to-purple-600 rounded-full flex items-center justify-center flex-shrink-0 shadow-lg border-2 border-purple-400/30'>
+                                                <FaRobot className='text-white text-base' />
+                                            </div>
+                                        )}
+
+                                        <div className={`max-w-[85%] lg:max-w-4xl ${message.type === 'user' ? 'order-1' : ''}`}>
+                                            <div
+                                                className={`relative p-4 lg:p-5 rounded-2xl ${message.type === 'user'
+                                                    ? 'bg-gradient-to-r from-purple-600 to-violet-600 text-white ml-auto shadow-lg'
+                                                    : 'bg-gray-800/50 text-gray-100 border border-gray-700/50 shadow-xl backdrop-blur-sm'
+                                                    }`}
+                                                style={{
+                                                    fontFamily: 'Agrandir, sans-serif',
+                                                    fontWeight: 400,
+                                                    lineHeight: '1.6'
+                                                }}
+                                            >
+                                                <FormattedMessage content={message.content} type={message.type} />
+                                            </div>
+                                            <div className={`text-xs text-gray-400 mt-2 ${message.type === 'user' ? 'text-right' : 'text-left'}`}>
+                                                {message.timestamp.toLocaleTimeString()}
+                                            </div>
+                                        </div>
+
+                                        {message.type === 'user' && (
+                                            <div className='w-8 h-8 bg-gray-600 rounded-full flex items-center justify-center flex-shrink-0 order-2'>
+                                                <FaUser className='text-white text-sm' />
+                                            </div>
+                                        )}
+                                    </div>
+                                )))}
 
                             {/* Typing Animation */}
                             {isTyping && (
