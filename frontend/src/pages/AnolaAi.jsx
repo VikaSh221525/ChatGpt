@@ -1,5 +1,48 @@
-import React, { useState, useEffect, useRef } from 'react'
-import { FaPlus, FaUser, FaPaperPlane, FaRobot, FaTrash, FaEdit, FaBars, FaTimes } from 'react-icons/fa'
+import React, { useState, useEffect, useRef } from 'react';
+import { FaPlus, FaUser, FaPaperPlane, FaRobot, FaTrash, FaEdit, FaBars, FaTimes } from 'react-icons/fa';
+import axios from 'axios'
+
+// API base URL - adjust this to match your backend
+const API_BASE_URL = 'http://localhost:3000/api'
+
+// API functions
+const chatAPI = {
+    // Get all chats for the user
+    getChats: async () => {
+        try {
+            const token = localStorage.getItem('token') // Assuming you store JWT token in localStorage
+            const response = await axios.get(`${API_BASE_URL}/chat/`, {
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            })
+            return response.data.chats
+        } catch (error) {
+            console.error('Error fetching chats:', error)
+            throw error
+        }
+    },
+
+    // Create a new chat
+    createChat: async (title) => {
+        try {
+            const token = localStorage.getItem('token')
+            const response = await axios.post(`${API_BASE_URL}/chat/`,
+                { title },
+                {
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    }
+                }
+            )
+            return response.data.chat
+        } catch (error) {
+            console.error('Error creating chat:', error)
+            throw error
+        }
+    }
+}
 
 const TypingAnimation = () => (
     <div className="flex space-x-1 p-4">
@@ -14,14 +57,13 @@ const TypingAnimation = () => (
 const AnolaAi = () => {
     const [messages, setMessages] = useState([])
     const [inputMessage, setInputMessage] = useState('')
-    const [chatHistory, setChatHistory] = useState([
-        { id: 1, title: 'React Development', lastMessage: 'How to create components...', timestamp: new Date(Date.now() - 86400000) },
-        { id: 2, title: 'JavaScript Tips', lastMessage: 'Best practices for...', timestamp: new Date(Date.now() - 172800000) },
-        { id: 3, title: 'Web Design', lastMessage: 'CSS Grid vs Flexbox...', timestamp: new Date(Date.now() - 259200000) }
-    ])
+    const [chatHistory, setChatHistory] = useState([])
+
     const [currentChatId, setCurrentChatId] = useState(null)
     const [sidebarOpen, setSidebarOpen] = useState(window.innerWidth > 768)
     const [isTyping, setIsTyping] = useState(false)
+    const [loading, setLoading] = useState(true)
+    const [error, setError] = useState(null)
     const messagesEndRef = useRef(null)
     const messagesContainerRef = useRef(null)
 
@@ -29,6 +71,38 @@ const AnolaAi = () => {
     const scrollToBottom = () => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
     }
+
+    // Fetch chats from backend
+    const fetchChats = async () => {
+        try {
+            setLoading(true)
+            setError(null)
+            const response = await axios.get('http://localhost:3000/api/chat/', {
+                withCredentials: true
+            })
+
+            console.log('Chats fetched:', response.data)
+
+            const chats = response.data.chats.map(chat => ({
+                id: chat._id,
+                title: chat.title,
+                lastMessage: 'Click to view conversation',
+                timestamp: new Date(chat.lastActivity)
+            }))
+
+            setChatHistory(chats.reverse())
+        } catch (error) {
+            console.error('Failed to fetch chats:', error)
+            setError('Failed to load chats. Please try again.')
+        } finally {
+            setLoading(false)
+        }
+    }
+
+    // Load chats on component mount
+    useEffect(() => {
+        fetchChats()
+    }, [])
 
     // Auto scroll when messages change
     useEffect(() => {
@@ -63,7 +137,6 @@ const AnolaAi = () => {
             content: inputMessage,
             timestamp: new Date()
         }
-
         setMessages(prev => [...prev, userMessage])
         setInputMessage('')
         setIsTyping(true)
@@ -81,18 +154,37 @@ const AnolaAi = () => {
         }, 2000)
     }
 
-    const startNewChat = () => {
-        const newChatId = Date.now()
-        const newChat = {
-            id: newChatId,
-            title: 'New Chat',
-            lastMessage: 'Started new conversation',
-            timestamp: new Date()
+    const startNewChat = async () => {
+        const title = window.prompt('Enter a title for your new chat:', 'New Chat')
+
+        // If user cancels the prompt or enters empty title, don't create chat
+        if (!title || title.trim() === '') {
+            return
         }
-        setChatHistory(prev => [newChat, ...prev])
-        setCurrentChatId(newChatId)
-        setMessages([])
-        setIsTyping(false)
+
+        try {
+            const response = await axios.post('http://localhost:3000/api/chat/', {
+                title: title.trim()
+            }, { withCredentials: true })
+
+            console.log('Chat created:', response.data)
+
+            // Use the actual response data from backend
+            const newChat = {
+                id: response.data.chat._id,
+                title: response.data.chat.title,
+                lastMessage: 'Started new conversation',
+                timestamp: new Date(response.data.chat.lastActivity)
+            }
+
+            setChatHistory(prev => [newChat, ...prev])
+            setCurrentChatId(response.data.chat._id)
+            setMessages([])
+            setIsTyping(false)
+        } catch (error) {
+            console.error('Failed to create chat:', error)
+            alert('Failed to create chat. Please try again.')
+        }
     }
 
     const selectChat = (chatId) => {
@@ -132,11 +224,29 @@ const AnolaAi = () => {
 
                 {/* Chat History */}
                 <div className='flex-1 overflow-y-auto p-4 space-y-2'>
-                    <h3 className='text-gray-400 text-sm font-medium mb-3 px-2'
-                        style={{ fontFamily: 'Agrandir, sans-serif', fontWeight: 500 }}>
-                        Recent Chats
-                    </h3>
-                    {chatHistory.map((chat) => (
+                    <div className='flex items-center justify-between mb-3'>
+                        <h3 className='text-gray-400 text-sm font-medium px-2'
+                            style={{ fontFamily: 'Agrandir, sans-serif', fontWeight: 500 }}>
+                            Recent Chats
+                        </h3>
+                        {loading && (
+                            <div className='text-purple-400 text-xs'>Loading...</div>
+                        )}
+                    </div>
+
+                    {error && (
+                        <div className='p-3 bg-red-500/20 border border-red-500/30 rounded-xl'>
+                            <p className='text-red-400 text-sm'>{error}</p>
+                            <button
+                                onClick={fetchChats}
+                                className='text-red-300 hover:text-red-200 text-xs mt-1 underline'
+                            >
+                                Retry
+                            </button>
+                        </div>
+                    )}
+
+                    {!loading && !error && chatHistory.map((chat) => (
                         <div
                             key={chat.id}
                             onClick={() => selectChat(chat.id)}
@@ -166,6 +276,13 @@ const AnolaAi = () => {
                             </div>
                         </div>
                     ))}
+
+                    {!loading && !error && chatHistory.length === 0 && (
+                        <div className='text-center py-8'>
+                            <p className='text-gray-400 text-sm'>No chats yet</p>
+                            <p className='text-gray-500 text-xs mt-1'>Create your first chat to get started!</p>
+                        </div>
+                    )}
                 </div>
             </div>
 
@@ -186,15 +303,11 @@ const AnolaAi = () => {
                         >
                             {sidebarOpen ? <FaTimes /> : <FaBars />}
                         </button>
-                        <div className='flex items-center gap-3'>
-                            <div className='w-8 h-8 bg-gradient-to-r from-purple-500 to-violet-500 rounded-full flex items-center justify-center'>
-                                <FaRobot className='text-white text-sm' />
-                            </div>
-                            <h1 className='text-lg lg:text-xl font-bold text-white'
-                                style={{ fontFamily: 'Agrandir, sans-serif', fontWeight: 700 }}>
-                                Anola AI
-                            </h1>
-                        </div>
+                        <h1 className='text-lg lg:text-xl font-bold text-white leading-none mt-1'
+                            style={{ fontFamily: 'Agrandir, sans-serif', fontWeight: 900 }}>
+                            Anola AI
+                        </h1>
+                        
                     </div>
                 </div>
 
