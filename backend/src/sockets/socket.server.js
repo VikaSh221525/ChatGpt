@@ -30,6 +30,8 @@ function initSocketServer(httpServer) {
     })
 
     io.on("connection", (socket) => {
+        console.log("User Connected");
+        
         socket.on("ai-message", async (messagePayload) => {
             // console.log("AI message recieved: ", messagePayload);
             //messagepayload=> chatID, content
