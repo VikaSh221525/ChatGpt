@@ -1,48 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { FaPlus, FaUser, FaPaperPlane, FaRobot, FaTrash, FaEdit, FaBars, FaTimes } from 'react-icons/fa';
 import axios from 'axios'
-
-// API base URL - adjust this to match your backend
-const API_BASE_URL = 'http://localhost:3000/api'
-
-// API functions
-const chatAPI = {
-    // Get all chats for the user
-    getChats: async () => {
-        try {
-            const token = localStorage.getItem('token') // Assuming you store JWT token in localStorage
-            const response = await axios.get(`${API_BASE_URL}/chat/`, {
-                headers: {
-                    'Authorization': `Bearer ${token}`
-                }
-            })
-            return response.data.chats
-        } catch (error) {
-            console.error('Error fetching chats:', error)
-            throw error
-        }
-    },
-
-    // Create a new chat
-    createChat: async (title) => {
-        try {
-            const token = localStorage.getItem('token')
-            const response = await axios.post(`${API_BASE_URL}/chat/`,
-                { title },
-                {
-                    headers: {
-                        'Authorization': `Bearer ${token}`,
-                        'Content-Type': 'application/json'
-                    }
-                }
-            )
-            return response.data.chat
-        } catch (error) {
-            console.error('Error creating chat:', error)
-            throw error
-        }
-    }
-}
+import { io } from "socket.io-client";
 
 const TypingAnimation = () => (
     <div className="flex space-x-1 p-4">
@@ -58,6 +17,8 @@ const AnolaAi = () => {
     const [messages, setMessages] = useState([])
     const [inputMessage, setInputMessage] = useState('')
     const [chatHistory, setChatHistory] = useState([])
+    const [socket, setSocket] = useState(null)
+    const [socketConnected, setSocketConnected] = useState(false)
 
     const [currentChatId, setCurrentChatId] = useState(null)
     const [sidebarOpen, setSidebarOpen] = useState(window.innerWidth > 768)
@@ -99,9 +60,56 @@ const AnolaAi = () => {
         }
     }
 
-    // Load chats on component mount
+    // Load chats on component mount and initialize socket
     useEffect(() => {
-        fetchChats()
+        fetchChats();
+
+        const tempSocket = io("http://localhost:3000", {
+            withCredentials: true
+        })
+
+        // Socket event listeners
+        tempSocket.on("connect", () => {
+            console.log("Connected to server-socket");
+            setSocketConnected(true)
+        })
+
+        tempSocket.on("ai-response", (response) => {
+            console.log("AI message received: ", response);
+            setIsTyping(false)
+
+            // Add AI response to messages
+            const aiMessage = {
+                id: Date.now(),
+                type: 'ai',
+                content: response.content,
+                timestamp: new Date()
+            }
+            setMessages(prev => [...prev, aiMessage])
+        })
+
+        tempSocket.on("ai-error", (error) => {
+            console.error("AI Error:", error);
+            setIsTyping(false)
+            alert("Error: " + error.message)
+        })
+
+        tempSocket.on("disconnect", () => {
+            console.log("Disconnected from server");
+            setSocketConnected(false)
+        })
+
+        tempSocket.on("connect_error", (error) => {
+            console.error("Socket connection error:", error);
+            setSocketConnected(false)
+        })
+
+        setSocket(tempSocket);
+
+        // Cleanup on unmount
+        return () => {
+            tempSocket.disconnect()
+        }
     }, [])
 
     // Auto scroll when messages change
@@ -123,35 +131,32 @@ const AnolaAi = () => {
 
     const handleSendMessage = (e) => {
         e.preventDefault()
-        if (!inputMessage.trim()) return
+        if (!inputMessage.trim() || !currentChatId) return
 
-        // If no chat is active, start a new one
-        if (!currentChatId) {
-            startNewChat()
+        // Check if socket is connected
+        if (!socket || !socket.connected) {
+            alert("Not connected to server. Please refresh the page.")
+            return
         }
 
-        // Add user message
+        const messageContent = inputMessage.trim()
+
+        // Add user message to UI immediately
         const userMessage = {
             id: Date.now(),
             type: 'user',
-            content: inputMessage,
+            content: messageContent,
             timestamp: new Date()
         }
         setMessages(prev => [...prev, userMessage])
         setInputMessage('')
         setIsTyping(true)
 
-        // Simulate AI response with typing animation
-        setTimeout(() => {
-            setIsTyping(false)
-            const aiMessage = {
-                id: Date.now() + 1,
-                type: 'ai',
-                content: 'Thank you for your message! This is a simulated response from Anola AI. In a real implementation, this would be connected to your AI backend.',
-                timestamp: new Date()
-            }
-            setMessages(prev => [...prev, aiMessage])
-        }, 2000)
+        // Send message to AI via socket
+        socket.emit("ai-message", {
+            chat: currentChatId,
+            content: messageContent
+        })
     }
 
     const startNewChat = async () => {
@@ -167,7 +172,7 @@ const AnolaAi = () => {
                 title: title.trim()
             }, { withCredentials: true })
 
-            console.log('Chat created:', response.data)
+            // console.log('Chat created:', response.data)
 
             // Use the actual response data from backend
             const newChat = {
@@ -307,7 +312,9 @@ const AnolaAi = () => {
                             style={{ fontFamily: 'Agrandir, sans-serif', fontWeight: 900 }}>
                             Anola AI
                         </h1>
-                        
+                        <div className={`text-xs px-2 py-1 rounded-full ${socketConnected ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}`}>
+                            {socketConnected ? '● Connected' : '● Disconnected'}
+                        </div>
                     </div>
                 </div>
 
@@ -383,38 +390,57 @@ const AnolaAi = () => {
                     )}
                 </div>
 
-                {/* Input Area */}
-                <div className='p-4 lg:p-6 border-t border-purple-500/20 bg-black/30 backdrop-blur-sm'>
-                    <form onSubmit={handleSendMessage} className='flex gap-3 lg:gap-4 items-center'>
-                        <div className='flex-1 relative'>
-                            <textarea
-                                value={inputMessage}
-                                onChange={(e) => setInputMessage(e.target.value)}
-                                placeholder='Message Anola AI...'
-                                className='w-full p-3 lg:p-4 bg-white/10 border border-purple-500/30 rounded-2xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all duration-300 resize-none min-h-[50px] lg:min-h-[60px] max-h-32'
-                                style={{ fontFamily: 'Agrandir, sans-serif', fontWeight: 400 }}
-                                rows={1}
-                                onKeyDown={(e) => {
-                                    if (e.key === 'Enter' && !e.shiftKey) {
-                                        e.preventDefault()
-                                        handleSendMessage(e)
-                                    }
-                                }}
-                            />
+                {/* Input Area - Only show when chat is active */}
+                {currentChatId ? (
+                    <div className='p-4 lg:p-6 border-t border-purple-500/20 bg-black/30 backdrop-blur-sm'>
+                        <form onSubmit={handleSendMessage} className='flex gap-3 lg:gap-4 items-center'>
+                            <div className='flex-1 relative'>
+                                <textarea
+                                    value={inputMessage}
+                                    onChange={(e) => setInputMessage(e.target.value)}
+                                    placeholder='Message Anola AI...'
+                                    className='w-full p-3 lg:p-4 bg-white/10 border border-purple-500/30 rounded-2xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all duration-300 resize-none min-h-[50px] lg:min-h-[60px] max-h-32'
+                                    style={{ fontFamily: 'Agrandir, sans-serif', fontWeight: 400 }}
+                                    rows={1}
+                                    onKeyDown={(e) => {
+                                        if (e.key === 'Enter' && !e.shiftKey) {
+                                            e.preventDefault()
+                                            handleSendMessage(e)
+                                        }
+                                    }}
+                                />
+                            </div>
+                            <button
+                                type='submit'
+                                disabled={!inputMessage.trim() || isTyping}
+                                className='p-3 lg:p-4 bg-gradient-to-r from-purple-600 to-violet-600 text-white rounded-2xl hover:from-purple-700 hover:to-violet-700 focus:outline-none focus:ring-2 focus:ring-purple-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-300 flex-shrink-0'
+                            >
+                                <FaPaperPlane className='text-sm lg:text-lg' />
+                            </button>
+                        </form>
+                        <p className='text-xs text-gray-400 mt-2 text-center px-2'
+                            style={{ fontFamily: 'Agrandir, sans-serif', fontWeight: 300 }}>
+                            Anola AI can make mistakes. Consider checking important information.
+                        </p>
+                    </div>
+                ) : (
+                    // Placeholder when no chat is selected
+                    <div className='p-4 lg:p-6 border-t border-purple-500/20 bg-black/30 backdrop-blur-sm'>
+                        <div className='text-center py-4'>
+                            <p className='text-gray-400 text-sm mb-2'
+                                style={{ fontFamily: 'Agrandir, sans-serif', fontWeight: 400 }}>
+                                Select a chat or create a new one to start messaging
+                            </p>
+                            <button
+                                onClick={startNewChat}
+                                className='px-6 py-2 bg-gradient-to-r from-purple-600 to-violet-600 text-white rounded-xl hover:from-purple-700 hover:to-violet-700 transition-all duration-300 text-sm font-medium'
+                                style={{ fontFamily: 'Agrandir, sans-serif', fontWeight: 500 }}
+                            >
+                                Start New Chat
+                            </button>
                         </div>
-                        <button
-                            type='submit'
-                            disabled={!inputMessage.trim() || isTyping}
-                            className='p-3 lg:p-4 bg-gradient-to-r from-purple-600 to-violet-600 text-white rounded-2xl hover:from-purple-700 hover:to-violet-700 focus:outline-none focus:ring-2 focus:ring-purple-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-300 flex-shrink-0'
-                        >
-                            <FaPaperPlane className='text-sm lg:text-lg' />
-                        </button>
-                    </form>
-                    <p className='text-xs text-gray-400 mt-2 text-center px-2'
-                        style={{ fontFamily: 'Agrandir, sans-serif', fontWeight: 300 }}>
-                        Anola AI can make mistakes. Consider checking important information.
-                    </p>
-                </div>
+                    </div>
+                )}
             </div>
         </div>
     )
